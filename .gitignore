@@ -1,0 +1,17 @@
+# KDE
+.directory
+
+# PHPStorm
+.idea/*
+
+# Apple
+.DS_Store
+
+# Composer
+vendor/*
+composer.lock
+composer.phar
+
+# Bower
+components
+bower_components
