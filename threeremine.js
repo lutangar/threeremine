@@ -3,16 +3,13 @@ var renderer, scene, camera,
     light, container;
 var cursor = new THREE.Vector3(0, 0, 1);
 
-//var mouse = T("mouse");
+var mouse = T("mouse");
 //var sound = T("saw", {freq:880}, mouse.X);
-var sound = T("sin", {freq:880, mul:0.5});
+//var sound = T("sin", {freq:440, mul:0.5});
 
-
-// Tone
-    // Reference oscillator
-//    var refOscillator  = T("osc", {wave:"sin", freq:880});
-//    var refOscillatorGenerator  = T("OscGen", {osc: refOscillator, mul: 0.15}).play();
-
+var min = 80, max = 800;
+var freq = T("mouse.x", {min:min, max:800});
+var sound = T("sin", {freq:0, mul:0.5});
 
 function getCanvasHeight() {
     return window.innerHeight - parseInt($("#container").offset().top)
@@ -24,6 +21,11 @@ function getCanvasHeight() {
 var width = $('#container').width(),
     height = getCanvasHeight();
 
+ // Leap related stuff
+var controller, frameCount, frame;
+var fingers = {}, hands = {};
+var spheres = {};
+
 function init() {
     container = document.getElementById('container');
     // renderer
@@ -34,18 +36,94 @@ function init() {
 
     scene = new THREE.Scene();
 
-    cubeGeometry = new THREE.CubeGeometry(6,6,6);
+//    cubeGeometry = new THREE.CubeGeometry(6,6,6);
 
     // Lambert material reacts to light
     cubeMaterial = new THREE.MeshLambertMaterial({
         color: Math.random() * 0xffffff // random color
     });
 
+    //
+    var manager = new THREE.LoadingManager();
+    manager.onProgress = function ( item, loaded, total ) {
+        console.log( item, loaded, total );
+    };
+
+
+    var loader = new THREE.OBJLoader( manager );
+    loader.load( 'resources/model/thermin_1.obj', function ( object ) {
+
+        object.traverse( function ( child ) {
+
+            if ( child instanceof THREE.Mesh ) {
+
+                child.material = cubeMaterial;
+
+            }
+
+        } );
+        object.scale = new THREE.Vector3(10,10,10);
+        object.rotation.y += -1.6;
+        object.add(new THREE.AxisHelper());
+        scene.add( object );
+
+    } );
+
+
     // mesh object
     cube = new THREE.Mesh(
         cubeGeometry,
         cubeMaterial
     );
+    cube.rotation.y += 0.05;
+
+
+    /**
+     * ---------------------------- HANDS & FINGERS -------------------------------------------------------------------
+     */
+    var hands = [];
+    // creating 2 hands
+    for(var i = 0; i < 2; i++) {
+        var hand = new HandObject();
+        hand.hide();
+
+        // creating 5 fingers per hands
+        for (var j = 0; j < 5; j++) {
+            hand.add(new FingerObject());
+        }
+        scene.add(hand);
+        hands.push( hand );
+    }
+
+    Leap.loop(function(frame){
+        // for each of our hands
+        for(var i = 0; i < 2; i++) {
+            // if a leap hand is present
+            if(frame.hands[i]) {
+                // update HandObject position and stuff
+                hands[i].position = leapToScene(frame.hands[i].palmPosition);
+                hands[i].show();
+
+                for(var j = 0; j < 5; j++) {
+                    if(frame.hands[i].fingers[j]) {
+                        hands[i].children[j].position = hands[i].worldToLocal(leapToScene(frame.hands[i].fingers[j].tipPosition));
+                        hands[i].children[j].setDirection(dirToScene(frame.hands[i].fingers[j].direction))
+                        hands[i].children[j].setLength((frame.hands[i].fingers[j].length/300)*1000);
+
+                        hands[i].children[j].show();
+                    } else {
+                        hands[i].children[j].hide();
+                    }
+                }
+                // leap hand not here
+            } else {
+                hands[i].hide();
+            }
+        }
+    });
+    /**
+     * ----------------------------------------------------------------------------------------------------------------
+     */
 
     // light
     light = new THREE.PointLight(0xFFFFFF);
@@ -53,130 +131,134 @@ function init() {
 
     // camera
     camera = new THREE.PerspectiveCamera(
-        70, // vertical field of view
-        300 / 200, // aspect ratio
+        45, // vertical field of view
+        width / height, // aspect ratio
         0.1, // near plane distance
         10000 // far plane distance
     );
-    camera.position = new THREE.Vector3(0, 5, 50); // pulling back the camera
-
-    scene.add(cube);
+    camera.position = new THREE.Vector3(0, 0, 50); // pulling back the camera
+    camera.lookAt(new THREE.Vector3(0, 0, 0))
+//    scene.add(cube);
     scene.add(light);
     scene.add(camera);
+    scene.add(new THREE.AxisHelper(100));
 
     renderer.render(scene, camera);
 
-    container.addEventListener('mousemove', mouseMoved, false);
+//    container.addEventListener('mousemove', mouseMoved, false);
+    container.addEventListener('mousewheel', zoom, false );
 
     sound.play();
-
+    mouse.start();
 }
 
 function mouseMoved(e) {
-
     cursor.x = ((e.clientX - $(renderer.domElement).offset().left) / width) * 2 - 1;
     cursor.y = - ((e.clientY - $(renderer.domElement).offset().top) / height) * 2 + 1;
 //    console.log(cursor);
 }
 
+function zoom(e) {
+    if ( e.wheelDelta ) { // WebKit / Opera / Explorer 9
 
-/**
- * http://www.efg2.com/Lab/ScienceAndEngineering/Spectra.htm
- * @param frequency
- */
-function frequencyToRGB(frequency) {
-var r, g, b, gamma = 0.80, IntensityMax = 255, factor =1;
+        delta = e.wheelDelta / 40;
 
-    switch (true) {
-        case (380 <= frequency &&  frequency < 440):
-            r = -(frequency - 440) / (440 - 380);
-            g = 0.0;
-            b = 1.0
-            break;
-        case (440 <= frequency &&  frequency < 490):
-            r = 0.0
-            g = (frequency - 440) / (490 - 440);
-            b = 1.0
-            break;
-        case (490 <= frequency &&  frequency < 510):
-            r = 0.0;
-            g = 1.0;
-            b = -(frequency - 510) / (510 - 490);
-            break;
-        case (510 <= frequency &&  frequency < 580):
-            r = (frequency - 510) / (580 - 510);
-            g = 1.0;
-            b = 0.0
-            break;
-        case (580 <= frequency &&  frequency < 645):
-            r = 1.0;
-            g = -(frequency - 645) / (645 - 580);
-            b = 0.0
-            break;
-        case (645 <= frequency &&  frequency <= 780):
-            r = 1.0;
-            g = 0.0;
-            b = 0.0
-            break;
-        default:
-            r = 0.0;
-            g = 0.0;
-            b = 0.0
-            break;
     }
-//    switch (true) {
-//        case (380 < frequency &&  frequency < 419):
-//            factor = 0.3 + 0.7*(frequency - 380) / (420 - 380);
-//            break;
-//        case (420 < frequency &&  frequency < 700):
-//            factor = 1.0;
-//            break;
-//        case (701 < frequency &&  frequency < 780):
-//            factor = 0.3 + 0.7*(780 - frequency) / (780 - 700);
-//            break;
-//        default:
-//            factor = 0.0;
-//            break;
-//    }
-//
-    r = adjust(r, factor, IntensityMax, gamma);
-    g = adjust(g, factor, IntensityMax, gamma);
-    b = adjust(b, factor, IntensityMax, gamma);
 
-    return 'rgb('+r+','+g+','+b+')';
+//    _zoomStart.y += delta * 0.01;
+    camera.position.z += delta* -1;
 }
 
-function adjust(color, factor, IntensityMax, gamma) {
-    if (color > 0) {
-        return Math.round(IntensityMax * Math.pow(color * factor, gamma))
-    }
-    return 0;
-}
-
-
-function soundFrequencyToColorFrequency(soundFrequency) {
-    if (soundFrequency > 0) {
-        return (8108.108/soundFrequency) + 384.595;
-    }
-    return 0;
-}
 
 /**
  * Render frame
  */
 function render() {
-    cube.rotation.y += 0.05;
-    sound.freq = (cursor.x *1000)+20;
-//    console.log((cursor.x *1000)+20);
-
     renderer.clear();
     renderer.render(scene, camera);
-    var colorFrequency = soundFrequencyToColorFrequency(sound.freq);
-//    console.log('ColorFrequency', colorFrequency);
-    var rgb = frequencyToRGB(colorFrequency);
-//    console.log('rgb', rgb);
 
-    $("#container").css('background-color',  ""+rgb+"");
+//    paintBackgroundFromFrequency(sound.freq, min, max);
+
+//    controller.on("frame", function(frame) {
+////        console.log("Frame: " + frame.id + " @ " + frame.timestamp);
+//
+//        var fingerIds = {};
+//        var handIds = {};
+//
+//
+//        // pointables
+//        for (var index = 0; index < frame.pointables.length; index++) {
+//
+//            var pointable = frame.pointables[index];
+//            var finger = fingers[pointable.id];
+//
+//
+//            var pos = pointable.tipPosition;
+//            var dir = pointable.direction;
+//
+//
+////            sound.freq = (pos[0] *10)+20;
+//
+//
+//            var origin = new THREE.Vector3(pos[0], pos[1], pos[2]);
+//            var direction = new THREE.Vector3(dir[0], dir[1], dir[2]);
+//            var zero = new THREE.Vector3(0,0,0);
+//            var test = new THREE.Vector3(0,0,1);
+//            if (!finger) {
+//                var geometry = new THREE.SphereGeometry(1000/20,4,4);
+//                var material = new THREE.MeshBasicMaterial( { color: 0x000000, wireframe: true, wireframeLinewidth:  1} );
+//
+////                finger = new THREE.Mesh( geometry, material );
+//                finger = new THREE.ArrowHelper(test, leapToScene(pos), (pointable.length/300)*1000, Math.random() * 0xffffff);
+////                finger.position.x = 1000 * 1000;
+//                fingers[pointable.id] = finger;
+//
+//                scene.add(finger);
+//            }
+//
+//            finger.position = leapToScene(pos);
+//            finger.setDirection(dir);
+////            finger.setLength((pointable.length/300)*1000);
+//
+//            fingerIds[pointable.id] = true;
+//        }
+//
+//        for (fingerId in fingers) {
+//            if (!fingerIds[fingerId]) {
+//                scene.remove(fingers[fingerId]);
+//                delete fingers[fingerId];
+//            }
+//        }
+//
+//        // hands
+//        for (var i = 0; i < frame.hands.length; i++) {
+//            var hand = frame.hands[i];
+//            var handObject = hands[hand.id];
+//
+//            if (!handObject) {
+//                var geometry = new THREE.SphereGeometry(1000/20,4,4);
+//                var material = new THREE.MeshBasicMaterial( { color: 0x000000, wireframe: true, wireframeLinewidth:  1} );
+//
+//                var handObject = new THREE.Mesh( geometry, material );
+////                hand = new THREE.ArrowHelper(leapToScene(pos), leapToScene(dir), 40, Math.random() * 0xffffff);
+//                hands[hand.id] = handObject;
+//                scene.add(handObject);
+//            }
+//            handObject.position = leapToScene(hand.palmPosition);
+//
+//            handIds[hand.id] = true;
+//        }
+//
+//        for (handId in hands) {
+//            if (!handIds[handId]) {
+//                scene.remove(hands[handId]);
+//                delete hands[handId];
+//            }
+//        }
+//
+//        //if(frame.gestures.length > 0) console.log(frame.gestures);
+//
+//    });
 }
 
 /**
@@ -189,6 +271,7 @@ function animate() {
 }
 
     init();
+    initLeap();
     animate();
 
 
