@@ -10,6 +10,7 @@ var mouse = T("mouse");
 var min = 80, max = 800;
 var freq = T("mouse.x", {min:min, max:800});
 var sound = T("sin", {freq:0, mul:0.5});
+var leapControllerMaxY = 100;
 
 function getCanvasHeight() {
     return window.innerHeight - parseInt($("#container").offset().top)
@@ -50,24 +51,7 @@ function init() {
     };
 
 
-    var loader = new THREE.OBJLoader( manager );
-    loader.load( 'resources/model/thermin_1.obj', function ( object ) {
 
-        object.traverse( function ( child ) {
-
-            if ( child instanceof THREE.Mesh ) {
-
-                child.material = cubeMaterial;
-
-            }
-
-        } );
-        object.scale = new THREE.Vector3(10,10,10);
-        object.rotation.y += -1.6;
-        object.add(new THREE.AxisHelper());
-        scene.add( object );
-
-    } );
 
 
     // mesh object
@@ -78,6 +62,14 @@ function init() {
     cube.rotation.y += 0.05;
 
 
+    // light
+    light = new THREE.PointLight(0xFFFFFF);
+    light.position = new THREE.Vector3(7, 23, 37);
+
+//    scene.add(cube);
+    scene.add(light);
+
+
     /**
      * ---------------------------- HANDS & FINGERS -------------------------------------------------------------------
      */
@@ -85,37 +77,52 @@ function init() {
     // creating 2 hands
     for(var i = 0; i < 2; i++) {
         var hand = new HandObject();
-        hand.hide();
 
         // creating 5 fingers per hands
         for (var j = 0; j < 5; j++) {
             hand.add(new FingerObject());
         }
+
+        hand.hide();
+
         scene.add(hand);
         hands.push( hand );
     }
 
+    // interaction box helper
+    var interactionBox = new InteractionBoxHelper();
+        interactionBox.add(new THREE.AxisHelper(1000));
+    scene.add(interactionBox);
+
+
+
     Leap.loop(function(frame){
+        // interaction box helper update
+        interactionBox.position.set(frame.interactionBox.center[0], frame.interactionBox.center[1], frame.interactionBox.center[2]);
+        interactionBox.scale.set(frame.interactionBox.size[0], frame.interactionBox.size[1], frame.interactionBox.size[2]);
+
         // for each of our hands
         for(var i = 0; i < 2; i++) {
             // if a leap hand is present
             if(frame.hands[i]) {
                 // update HandObject position and stuff
-                hands[i].position = leapToScene(frame.hands[i].palmPosition);
+                hands[i].position = dirToScene(frame.hands[i].palmPosition);
+                hands[i].position = dirToScene(frame.hands[i].palmPosition);
                 hands[i].show();
 
                 for(var j = 0; j < 5; j++) {
                     if(frame.hands[i].fingers[j]) {
-                        hands[i].children[j].position = hands[i].worldToLocal(leapToScene(frame.hands[i].fingers[j].tipPosition));
-                        hands[i].children[j].setDirection(dirToScene(frame.hands[i].fingers[j].direction))
-                        hands[i].children[j].setLength((frame.hands[i].fingers[j].length/300)*1000);
+                        hands[i].children[j].position = hands[i].worldToLocal(dirToScene(frame.hands[i].fingers[j].tipPosition));
+                        hands[i].children[j].setDirection(dirToScene(frame.hands[i].fingers[j].direction));
+                        hands[i].children[j].setLength((frame.hands[i].fingers[j].length));
 
-                        hands[i].children[j].show();
+//                        hands[i].children[j].show();
                     } else {
-                        hands[i].children[j].hide();
+                        hands[i].children[j].visible = false;
                     }
                 }
-                // leap hand not here
+
+            // leap hand not here
             } else {
                 hands[i].hide();
             }
@@ -125,23 +132,41 @@ function init() {
      * ----------------------------------------------------------------------------------------------------------------
      */
 
-    // light
-    light = new THREE.PointLight(0xFFFFFF);
-    light.position = new THREE.Vector3(7, 23, 37);
-
     // camera
     camera = new THREE.PerspectiveCamera(
-        45, // vertical field of view
+        90, // vertical field of view
         width / height, // aspect ratio
         0.1, // near plane distance
         10000 // far plane distance
     );
-    camera.position = new THREE.Vector3(0, 0, 50); // pulling back the camera
-    camera.lookAt(new THREE.Vector3(0, 0, 0))
-//    scene.add(cube);
-    scene.add(light);
-    scene.add(camera);
-    scene.add(new THREE.AxisHelper(100));
+    camera.position = new THREE.Vector3(
+        0,
+        interactionBox.position.y+1,
+        interactionBox.position.z+2
+    ); // pulling back the camera
+    camera.lookAt(new THREE.Vector3(0, 0, 0));
+    interactionBox.add(camera);
+
+    // Theremin model
+    var loader = new THREE.OBJLoader( manager );
+    loader.load( 'resources/model/thermin_1.obj', function ( object ) {
+        object.traverse( function ( child ) {
+
+            if ( child instanceof THREE.Mesh ) {
+                child.material = cubeMaterial;
+            }
+
+        } );
+//        object.scale = new THREE.Vector3(10, 10, 10);
+//        object.rotation.y += -1.6;
+        object.position = new THREE.Vector3(0, -1, 0);
+        object.rotateOnAxis(new THREE.Vector3(0,1,0), -Math.PI/2);
+        object.scale = new THREE.Vector3(0.7, 0.7, 0.7);
+        object.add(new THREE.AxisHelper());
+
+        interactionBox.add( object );
+    });
+
 
     renderer.render(scene, camera);
 
